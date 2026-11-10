@@ -1,10 +1,11 @@
 // sw.js — offline cache so the deck works in a club with no Wi-Fi.
 // Bump VERSION whenever you change any app file so tablets pick up the update.
-const VERSION = 'modpod-v1';
+const VERSION = 'modpod-v2';
 const FILES = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest',
   'js/app.js', 'js/deck.js', 'js/views.js', 'js/deck-processor.js',
   'js/mod/modfile.js', 'js/mod/modplayer.js', 'js/audio/bufferplayer.js',
+  'js/library/db.js', 'js/library/formats.js', 'js/library/zip.js', 'js/library/library-ui.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
   'demo/modpod-demo.mod',
 ];

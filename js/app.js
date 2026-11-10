@@ -1,6 +1,7 @@
 // app.js — wires the Deck to the screen: buttons, fader, jog, displays.
 
 import { Deck } from './deck.js';
+import { LibraryUI } from './library/library-ui.js';
 import { drawPatternView, drawWaveView, drawOverview, overviewPosAt, drawJog } from './views.js';
 
 const $ = (id) => document.getElementById(id);
@@ -9,9 +10,10 @@ window.deck = deck; // handy for poking at from the browser console
 
 // ---------------------------------------------------------------- helpers
 
-function toast(msg, ms = 3500) {
+function toast(msg, ms = 3500, isError = false) {
   const t = $('toast');
   t.textContent = msg;
+  t.classList.toggle('error', isError);
   t.hidden = false;
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => { t.hidden = true; }, ms);
@@ -46,38 +48,45 @@ function fmtTime(sec) {
 
 // ---------------------------------------------------------------- loading
 
-async function loadFile(file) {
+async function loadFile(file, libraryId = null) {
   try {
     $('track-title').textContent = 'Loading…';
-    await deck.loadFile(file);
+    await deck.loadFile(file, libraryId);
   } catch (err) {
-    console.error(err);
-    toast(err.message || String(err));
-    $('track-title').textContent = deck.name || 'No track loaded';
+    console.warn(err);
+    toast(err.message || String(err), 5000, true);
+    $('track-title').textContent = deck.kind ? (deck.song ? deck.song.title : deck.name) : 'No track loaded';
+    throw err;
   }
 }
 
-$('btn-load').addEventListener('click', () => {
-  if (deck.playing && !confirm('This deck is playing. Load a new track anyway?')) return;
-  $('file-input').click();
+const library = new LibraryUI({
+  toast,
+  onLoad: async (blob, meta) => {
+    if (deck.playing && !confirm('This deck is playing. Load a new track anyway?')) throw new Error('cancelled');
+    await loadFile(new File([blob], meta.name), meta.id);
+  },
 });
-$('file-input').addEventListener('change', (e) => {
-  const f = e.target.files[0];
-  if (f) loadFile(f);
-  e.target.value = '';
-});
-$('btn-demo').addEventListener('click', async () => {
+window.library = library;
+
+$('btn-load').addEventListener('click', () => library.show());
+$('btn-demo').addEventListener('click', () => library.show());
+$('lib-demo').addEventListener('click', async () => {
   const res = await fetch('demo/modpod-demo.mod');
-  const blob = await res.blob();
-  loadFile(new File([blob], 'modpod-demo.mod'));
+  await library.importFiles([new File([await res.blob()], 'modpod-demo.mod')]);
 });
-// Drag & drop (desktop testing).
+// Drag & drop (desktop testing): import into the library.
 window.addEventListener('dragover', (e) => e.preventDefault());
 window.addEventListener('drop', (e) => {
   e.preventDefault();
-  const f = e.dataTransfer.files[0];
-  if (f) loadFile(f);
+  if (e.dataTransfer.files.length) { library.show(); library.importFiles([...e.dataTransfer.files]); }
 });
+
+// Fill in things the library only learns once a track is decoded / tapped.
+deck.addEventListener('loaded', () => {
+  if (deck.kind === 'audio') library.learn(deck.libraryId, { duration: deck.audio.duration, bpm: deck.bpmAudio });
+});
+deck.addEventListener('grid', () => library.learn(deck.libraryId, { bpm: deck.bpmAudio }));
 
 deck.addEventListener('loaded', () => {
   $('empty-hint').hidden = true;
@@ -331,7 +340,7 @@ $('btn-fullscreen').addEventListener('click', () => {
 
 const keysDown = new Set();
 window.addEventListener('keydown', (e) => {
-  if (e.repeat || e.target.tagName === 'INPUT' || $('settings').open) return;
+  if (e.repeat || e.target.tagName === 'INPUT' || $('settings').open || library.open) return;
   keysDown.add(e.code);
   if (e.code === 'Space') { e.preventDefault(); deck.togglePlay(); }
   else if (e.code === 'KeyC') deck.cueDown();

@@ -118,7 +118,8 @@ dialog label.check { display: flex; gap: 8px; align-items: center; }
 .dialog-buttons { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
 .hint { font-size: 12px; color: var(--dim); }
 
-#toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #2a1015; border: 1px solid var(--red); color: #fff; padding: 10px 16px; border-radius: 8px; max-width: 90vw; z-index: 10; }
+#toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--accent); color: #fff; padding: 10px 16px; border-radius: 8px; max-width: 90vw; z-index: 10; }
+#toast.error { background: #2a1015; border-color: var(--red); }
 
 /* Portrait tablets: put the tempo column beside the controls only. */
 @media (orientation: portrait) {
@@ -126,3 +127,51 @@ dialog label.check { display: flex; gap: 8px; align-items: center; }
     grid-template-rows: auto 52px 1fr minmax(260px, 30vh);
   }
 }
+
+/* ---------- library ---------- */
+#library { position: fixed; inset: 0; z-index: 5; background: var(--bg); display: flex; flex-direction: column;
+  padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); gap: 8px; }
+#library[hidden], #sheet[hidden], #lib-empty[hidden] { display: none; }
+.lib-top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#lib-search { flex: 1; min-width: 200px; font-size: 18px; padding: 10px 12px; border-radius: 8px;
+  background: var(--panel); color: var(--text); border: 1px solid var(--line); user-select: text; -webkit-user-select: text; }
+.chips { display: flex; gap: 4px; }
+#lib-sort { font-size: 15px; padding: 9px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; }
+.lib-body { flex: 1; display: flex; gap: 8px; min-height: 0; }
+#lib-crates { width: 200px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; touch-action: pan-y; }
+.crate { text-align: left; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px; font-size: 15px; display: flex; justify-content: space-between; gap: 6px; }
+.crate span { color: var(--dim); font-size: 13px; }
+.crate.sel { border-color: var(--accent); color: var(--accent); background: #2a1e0e; }
+.crate.add { color: var(--dim); border-style: dashed; }
+.crate-head { font-size: 11px; color: var(--dim); letter-spacing: 0.12em; margin: 10px 4px 2px; }
+#lib-list { flex: 1; position: relative; overflow-y: auto; touch-action: pan-y; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; -webkit-overflow-scrolling: touch; }
+#lib-spacer { position: relative; }
+.trk { position: absolute; left: 0; right: 0; height: 58px; display: flex; align-items: center; gap: 12px; padding: 0 6px 0 12px;
+  border-bottom: 1px solid #1d2430; cursor: pointer; }
+.trk:active { background: #202938; }
+.trk .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.trk .main b, .trk .main small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trk .main b { font-size: 16px; }
+.trk .main small { color: var(--dim); font-size: 12px; }
+.trk .bpm, .trk .dur { width: 64px; text-align: right; font: 600 15px "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+.trk .dur { color: var(--dim); width: 52px; }
+.trk .more { background: none; border: none; color: var(--dim); font-size: 24px; width: 48px; height: 48px; }
+.trk.played { opacity: 0.5; }
+.trk.played .main b::after { content: " ✓"; color: var(--green); }
+.trk.loaded { background: #2a1e0e; }
+.fmt { width: 52px; text-align: center; font: 700 11px system-ui; padding: 4px 0; border-radius: 4px; flex: none; }
+.fmt-mod { background: #3a2a12; color: var(--accent); }
+.fmt-tracker { background: #2a1838; color: #c58bff; }
+.fmt-audio { background: #0f2a3a; color: var(--blue); }
+#lib-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 30px; color: var(--dim); }
+#lib-empty b { color: var(--text); }
+#lib-foot { font-size: 12px; color: var(--dim); }
+#sheet { position: fixed; inset: 0; z-index: 8; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; }
+.sheet-box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; width: min(460px, 92vw); max-height: 86vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.sheet-box h3 { margin: 0; }
+.sheet-row { display: flex; gap: 10px; align-items: center; padding: 8px 4px; font-size: 16px; }
+.sheet-row input { width: 22px; height: 22px; }
+.sheet-buttons { display: flex; gap: 8px; justify-content: space-between; margin-top: 8px; }
+.btn.danger { color: var(--red); border-color: #5a2030; }
+@media (max-width: 760px) { #lib-crates { width: 140px; } .trk .dur { display: none; } }

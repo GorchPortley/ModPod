@@ -4,7 +4,8 @@
 // playback state, and implements the CDJ behaviours (cue, hot cues, loops).
 // No DOM code in here — app.js wires it to the screen.
 
-import { parseMod, buildTimeline, timelineAt, looksLikeMod } from './mod/modfile.js';
+import { parseMod, buildTimeline, timelineAt } from './mod/modfile.js';
+import { detect } from './library/formats.js';
 
 const STORE_KEY = 'modpod.tracks.v1';
 const SETTINGS_KEY = 'modpod.settings.v1';
@@ -80,14 +81,21 @@ export class Deck extends EventTarget {
 
   // ------------------------------------------------------------------ loading
 
-  async loadFile(file) {
+  /** Load a File/Blob. `libraryId` links it to its library entry (or null). */
+  async loadFile(file, libraryId = null) {
     await this.resume();
     const buf = await file.arrayBuffer();
+    const fmt = detect(buf, file.name);
+    if (!fmt) throw new Error(`"${file.name}" isn't a format ModPod knows.`);
+    if (fmt.kind === 'tracker') {
+      throw new Error(`${fmt.format} playback isn't built yet — it's next on the list (libopenmpt engine). The file is safe in your library.`);
+    }
     this.post({ type: 'pause' });
+    this.libraryId = libraryId;
     this.name = file.name;
     this.trackKey = file.name + ':' + file.size;
     this.cueing = false;
-    if (looksLikeMod(buf, file.name)) {
+    if (fmt.kind === 'mod') {
       this.loadMod(buf, file.name);
     } else {
       await this.loadAudio(buf);
@@ -226,6 +234,7 @@ export class Deck extends EventTarget {
     this.gridOffset = offsetFrame;
     this.post({ type: 'grid', bpm, offset: offsetFrame });
     this.saveTrackData();
+    this.emit('grid');
   }
 
   // ------------------------------------------------------------------ positions

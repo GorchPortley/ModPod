@@ -16,10 +16,10 @@
 <body>
   <div id="app">
     <header id="top">
-      <button id="btn-load" class="btn">LOAD</button>
+      <button id="btn-load" class="btn">LIBRARY</button>
       <div id="track">
         <div id="track-title">No track loaded</div>
-        <div id="track-info">Tap LOAD to pick a .mod or audio file</div>
+        <div id="track-info">Tap LIBRARY to pick a track</div>
       </div>
       <div class="readout" id="time-box">
         <div class="label" id="time-label">REMAIN</div>
@@ -41,8 +41,8 @@
       <canvas id="main-view"></canvas>
       <div id="empty-hint">
         <p><b>ModPod</b> — one tablet, one deck.</p>
-        <p>Load a ProTracker-style <b>.mod</b> or any audio track the browser can decode (mp3, wav, flac, ogg, m4a…).</p>
-        <button id="btn-demo" class="btn">Load demo MOD</button>
+        <p>Tap <b>LIBRARY</b> to add and load MODs or audio tracks (mp3, wav, flac, ogg, m4a…).</p>
+        <button id="btn-demo" class="btn">Open library</button>
       </div>
     </main>
 
@@ -133,7 +133,43 @@
     </form>
   </dialog>
 
-  <input type="file" id="file-input" hidden>
+  <div id="library" hidden>
+    <div class="lib-top">
+      <input id="lib-search" type="search" placeholder="Search — or type a BPM like 125" autocomplete="off">
+      <div class="chips" id="lib-kind">
+        <button class="btn small on" data-kind="all">ALL</button>
+        <button class="btn small" data-kind="mod">MOD</button>
+        <button class="btn small" data-kind="tracker">XM/S3M/IT</button>
+        <button class="btn small" data-kind="audio">AUDIO</button>
+      </div>
+      <select id="lib-sort">
+        <option value="title">Title</option>
+        <option value="bpm">BPM</option>
+        <option value="duration">Length</option>
+        <option value="format">Format</option>
+        <option value="added">Recently added</option>
+        <option value="played">Recently played</option>
+      </select>
+      <button id="lib-add" class="btn">+ ADD FILES</button>
+      <button id="lib-close" class="btn icon" aria-label="Close library">✕</button>
+    </div>
+    <div class="lib-body">
+      <nav id="lib-crates"></nav>
+      <div id="lib-list">
+        <div id="lib-spacer"><div id="lib-rows"></div></div>
+        <div id="lib-empty" hidden>
+          <p><b>Your library is empty.</b></p>
+          <p>Tap <b>+ ADD FILES</b> and pick MODs, XM/S3M/IT, audio tracks — or whole <b>.zip</b> collections.
+            Files are copied onto this tablet, so they're there next time (and offline).</p>
+          <button id="lib-demo" class="btn">Add the demo MOD</button>
+        </div>
+      </div>
+    </div>
+    <div id="lib-foot"></div>
+  </div>
+  <div id="sheet" hidden></div>
+
+  <input type="file" id="lib-input" multiple hidden>
   <div id="toast" hidden></div>
 
   <script type="module" src="js/app.js"></script>

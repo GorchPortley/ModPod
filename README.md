@@ -38,9 +38,26 @@ Each MOD channel is also effectively a stem: mute the drums, solo the bassline, 
   The song length is computed up front, so **remaining time** is accurate.
 - At song end: stop (default) or loop forever.
 
+## Library
+
+Tap **LIBRARY**, then **+ ADD FILES**. You can pick many files at once, including whole **.zip**
+collections, which get unpacked. Files are copied into the tablet's browser storage, so they're
+there next time and work offline.
+
+- **Search** matches title, artist and file name. **Type a number** (e.g. `125`) to list every
+  track you can reach from that BPM within ±8 % on the tempo fader.
+- Filter by MOD / XM-S3M-IT / audio, and sort by title, BPM, length, format, or recently added/played.
+- **Crates** let you prep sets. Use ⋯ on a track to add it to a crate; long-press a crate to rename or delete it.
+- **Played this session** shows your set history. Played tracks are dimmed with a ✓.
+- Titles, BPM and length come from the files themselves (MOD/XM/S3M/IT headers, mp3 ID3 tags).
+  Audio length is filled in once you've loaded the track, and tapped BPMs are saved.
+- Each tablet has its own library (browser storage is per device).
+
+XM / S3M / IT files can already be imported and browsed. Playing them needs the libopenmpt engine (next step).
+
 ## Using it
 
-1. Tap **LOAD** and pick a `.mod` or an audio file (or **Load demo MOD**).
+1. Tap **LIBRARY**, add some files (or the demo MOD), and tap a track to load it.
 2. **CUE / PLAY** work like a CDJ.
 3. Tempo fader: drag it (it moves relative to your finger, for fine control). Double-tap to reset.
    It's CDJ-style by default (up = slower); you can flip that in ⚙ Settings.
@@ -77,6 +94,7 @@ js/deck-processor.js        the AudioWorklet (real-time audio thread), owns one 
 js/mod/modfile.js           MOD parser + timeline scan (song length, seeking info)
 js/mod/modplayer.js         the MOD engine (ProTracker effects, mixing, DJ loops)
 js/audio/bufferplayer.js    audio-track player (variable speed, loops, beat grid)
+js/library/                 library: IndexedDB storage, format detection + metadata, zip import, browser UI
 sw.js, manifest.webmanifest offline / installable app
 tests/                      headless engine tests + the demo-MOD generator
 ```
@@ -88,7 +106,7 @@ Run the tests: `npm test` (add `-- --wav` to also write `tests/out/demo.wav` to 
 
 ## Roadmap / ideas for next steps
 
-- [ ] **Library / crate**: keep tracks on the tablet (IndexedDB) instead of picking files every time.
+- [x] **Library / crates** stored on the tablet (IndexedDB), with zip import.
 - [ ] **More formats**: XM / S3M / IT. Either extend the engine, or compile *libopenmpt* (C++) to WebAssembly.
 - [ ] **Key lock for audio tracks** (time-stretching, e.g. WSOLA or a phase vocoder).
 - [ ] **Auto BPM detection** for audio tracks, plus beat-grid nudge.
