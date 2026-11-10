@@ -2,7 +2,7 @@
 
 import { Deck } from './deck.js';
 import { LibraryUI } from './library/library-ui.js';
-import { drawPatternView, drawWaveView, drawOverview, overviewPosAt, drawJog } from './views.js';
+import { drawPatternView, drawWaveView, drawOverview, overviewPosAt, drawJog, patternLayout } from './views.js';
 
 const $ = (id) => document.getElementById(id);
 const deck = new Deck();
@@ -55,7 +55,7 @@ async function loadFile(file, libraryId = null) {
   } catch (err) {
     console.warn(err);
     toast(err.message || String(err), 5000, true);
-    $('track-title').textContent = deck.kind ? (deck.song ? deck.song.title : deck.name) : 'No track loaded';
+    $('track-title').textContent = deck.kind ? trackTitle() : 'No track loaded';
     throw err;
   }
 }
@@ -88,13 +88,24 @@ deck.addEventListener('loaded', () => {
 });
 deck.addEventListener('grid', () => library.learn(deck.libraryId, { bpm: deck.bpmAudio }));
 
+function trackTitle() {
+  if (deck.kind === 'mod') return deck.song.title;
+  if (deck.kind === 'tracker') return deck.view.title;
+  return deck.name.replace(/\.[^.]+$/, '');
+}
+
 deck.addEventListener('loaded', () => {
   $('empty-hint').hidden = true;
-  $('track-title').textContent = deck.kind === 'mod' ? deck.song.title : deck.name.replace(/\.[^.]+$/, '');
+  deck.channelOffset = 0;
+  $('track-title').textContent = trackTitle();
   if (deck.kind === 'mod') {
     const s = deck.song;
     $('track-info').textContent =
       `MOD ${s.tag} · ${s.channels} ch · ${s.songLength} orders · ${fmtTime(deck.timeline.duration).slice(0, -2)} · ${deck.name}`;
+  } else if (deck.kind === 'tracker') {
+    const v = deck.view;
+    $('track-info').textContent =
+      `${v.format} · ${v.channels} ch · ${v.songLength} orders · ${fmtTime(v.duration).slice(0, -2)}${v.artist ? ' · ' + v.artist : ''} · ${deck.name}`;
   } else {
     const a = deck.audio;
     $('track-info').textContent = `${(a.sampleRate / 1000).toFixed(1)} kHz · ${fmtTime(a.duration).slice(0, -2)} · ${deck.name}`;
@@ -104,6 +115,7 @@ deck.addEventListener('loaded', () => {
 });
 
 deck.addEventListener('ended', () => toast('Track ended'));
+deck.addEventListener('error', () => toast(deck.lastError, 5000, true));
 
 // ---------------------------------------------------------------- transport
 
@@ -148,7 +160,7 @@ press($('btn-quant'), { down: () => { deck.setSetting('quantize', !deck.settings
 let taps = [];
 press($('btn-tap'), {
   down: () => {
-    if (deck.kind !== 'audio') { toast('MODs already know their BPM. Use Settings → rows per beat if it reads double/half.'); return; }
+    if (deck.kind !== 'audio') { toast('Tracker files know their own BPM. If it reads double or half, change rows per beat in ⚙ Settings.'); return; }
     const now = performance.now();
     if (taps.length && now - taps[taps.length - 1] > 2000) taps = [];
     taps.push(now);
@@ -173,9 +185,9 @@ press($('btn-tap'), {
 function buildChannelButtons() {
   const row = $('channels');
   row.innerHTML = '';
-  if (deck.kind !== 'mod') { row.style.display = 'none'; return; }
+  if (!deck.rowBased) { row.style.display = 'none'; return; }
   row.style.display = '';
-  for (let c = 0; c < deck.song.channels; c++) {
+  for (let c = 0; c < deck.view.channels; c++) {
     const b = document.createElement('button');
     b.className = 'btn pad';
     b.innerHTML = `${c + 1}<span class="vu"></span>`;
@@ -233,7 +245,6 @@ press($('btn-range'), {
 press($('btn-tempo-reset'), { down: () => { faderV = 0; applyFader(); } });
 press($('btn-keylock'), {
   down: () => {
-    if (deck.kind === 'audio') { toast('Master tempo for audio tracks needs time-stretching — that is a later step. MOD decks have it.'); return; }
     deck.setKeylock(!deck.settings.keylock);
     updateStaticButtons();
   },
@@ -270,7 +281,7 @@ const jog = { active: false, angle: 0, lastT: 0, vel: 0, searchAcc: 0 };
       // Spin speed → pitch bend. ~1 rev/s ≈ ±30 % at most.
       jog.vel = jog.vel * 0.6 + (d / dt) * 0.4;
       deck.setBend(1 + Math.max(-0.3, Math.min(0.3, jog.vel * 0.05)));
-    } else if (deck.kind === 'mod') {
+    } else if (deck.rowBased) {
       jog.searchAcc += d;
       const step = Math.PI / 12; // 15° per row
       while (Math.abs(jog.searchAcc) >= step) {
@@ -283,6 +294,23 @@ const jog = { active: false, angle: 0, lastT: 0, vel: 0, searchAcc: 0 };
     }
   });
   const end = () => { jog.active = false; deck.setBend(1); };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+})();
+
+// ---------------------------------------------------------------- pattern view: swipe to scroll channels
+
+(() => {
+  const el = $('main-view');
+  let startX = null, startOff = 0;
+  el.addEventListener('pointerdown', (e) => { if (deck.rowBased) { startX = e.clientX; startOff = deck.channelOffset || 0; } });
+  el.addEventListener('pointermove', (e) => {
+    if (startX === null) return;
+    const { layout, font } = patternLayout(el.clientWidth, deck.view.channels, deck.view.hasVolumeColumn);
+    const chW = layout.w * font * 0.62;
+    deck.channelOffset = Math.max(0, Math.round(startOff - (e.clientX - startX) / chW));
+  });
+  const end = () => { startX = null; };
   el.addEventListener('pointerup', end);
   el.addEventListener('pointercancel', end);
 })();
@@ -316,7 +344,10 @@ function syncSettingsForm() {
   $('set-interp').value = s.interpolation;
   $('set-sep').value = Math.round(s.stereoSep * 100);
   $('set-sep-val').textContent = Math.round(s.stereoSep * 100) + '%';
-  $('set-rpb').value = s.rowsPerBeat;
+  $('set-rpb').value = deck.rowsPerBeat;
+  $('set-rpb').disabled = !deck.rowBased;
+  $('set-mtmode').value = s.mtMode;
+  $('set-mtquality').value = s.mtQuality;
   $('set-songloop').value = s.songLoop ? 1 : 0;
   $('set-gain').value = Math.round(s.gain * 100);
   $('set-gain-val').textContent = Math.round(s.gain * 100) + '%';
@@ -326,7 +357,9 @@ function syncSettingsForm() {
 $('btn-settings').addEventListener('click', () => { syncSettingsForm(); $('settings').showModal(); });
 $('set-interp').addEventListener('change', (e) => deck.setSetting('interpolation', +e.target.value));
 $('set-sep').addEventListener('input', (e) => { deck.setSetting('stereoSep', e.target.value / 100); syncSettingsForm(); });
-$('set-rpb').addEventListener('change', (e) => deck.setSetting('rowsPerBeat', +e.target.value));
+$('set-rpb').addEventListener('change', (e) => { if (deck.rowBased) deck.setRowsPerBeat(+e.target.value); });
+$('set-mtmode').addEventListener('change', (e) => deck.setSetting('mtMode', e.target.value));
+$('set-mtquality').addEventListener('change', (e) => deck.setSetting('mtQuality', e.target.value));
 $('set-songloop').addEventListener('change', (e) => deck.setSetting('songLoop', e.target.value === '1'));
 $('set-gain').addEventListener('input', (e) => { deck.setSetting('gain', e.target.value / 100); syncSettingsForm(); });
 $('set-fader').addEventListener('change', (e) => { deck.setSetting('faderInvert', e.target.value === '1'); applyFader(); });
@@ -374,8 +407,7 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 function updateStaticButtons() {
   const s = deck.settings;
   $('btn-quant').classList.toggle('on', s.quantize);
-  $('btn-keylock').classList.toggle('on', s.keylock && deck.kind !== 'audio');
-  $('btn-keylock').disabled = deck.kind === 'audio';
+  $('btn-keylock').classList.toggle('on', s.keylock);
   $('btn-range').textContent = `±${Math.round(s.pitchRange * 100)}%`;
   $('btn-tap').disabled = deck.kind !== 'audio';
 }
@@ -384,7 +416,7 @@ function frame() {
   requestAnimationFrame(frame);
   const st = deck.state;
 
-  if (deck.kind === 'mod') drawPatternView($('main-view'), deck);
+  if (deck.rowBased) drawPatternView($('main-view'), deck);
   else drawWaveView($('main-view'), deck);
   drawOverview($('overview'), deck);
   drawJog($('jog'), deck);
@@ -413,13 +445,13 @@ function frame() {
     const el = deck.elapsed(), dur = deck.duration();
     const remain = (dur - el) / effRate;
     $('time').textContent = showRemain ? '-' + fmtTime(remain) : fmtTime(el / effRate);
-    $('time-box').classList.toggle('warn', playing && showRemain && remain < 30 && !(deck.kind === 'mod' && deck.settings.songLoop));
+    $('time-box').classList.toggle('warn', playing && showRemain && remain < 30 && !(deck.rowBased && deck.settings.songLoop));
     const base = deck.baseBpm();
     $('bpm').textContent = base ? (base * effRate).toFixed(1) : '---.-';
-    if (deck.kind === 'mod') {
-      $('bpm-base').textContent = `${base.toFixed(1)} · spd ${st.speed}/${st.tempo}`;
-      const pat = deck.song.orders[st.order];
-      $('pos').textContent = `ORD ${st.order}/${deck.song.songLength - 1} · PAT ${pat} · ROW ${String(st.row).padStart(2, '0')}`;
+    if (deck.rowBased) {
+      $('bpm-base').textContent = `${base.toFixed(1)} · spd ${st.speed}/${Math.round(st.tempo)} · ${deck.rowsPerBeat} r/b`;
+      const pat = deck.view.orderPattern(st.order);
+      $('pos').textContent = `ORD ${st.order}/${deck.view.songLength - 1} · PAT ${pat} · ROW ${String(st.row).padStart(2, '0')}`;
       const btns = $('channels').children;
       for (let c = 0; c < btns.length; c++) {
         btns[c].classList.toggle('muted', deck.mutes[c]);

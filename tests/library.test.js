@@ -22,7 +22,7 @@ function fakeXM() {
 function fakeS3M() {
   const b = bytes(200);
   put(b, 0, 'Second Reality'); put(b, 44, 'SCRM');
-  b[49] = 3; b[50] = 125;          // speed 3 → 250 "BPM" at 4 rows/beat
+  b[49] = 3; b[50] = 125;          // speed 3 → 8 rows per beat → 125 BPM
   for (let i = 0; i < 32; i++) b[64 + i] = i < 10 ? i : 255;
   return b.buffer;
 }
@@ -90,7 +90,7 @@ await test('probes MOD metadata (title, channels, length, BPM)', () => {
 });
 await test('probes XM / S3M / IT headers', () => {
   const x = probe(fakeXM(), 'x.xm'); assert.equal(x.title, 'Acid Jungle'); assert.equal(x.channels, 8); assert.equal(x.bpm, 140);
-  const s = probe(fakeS3M(), 's.s3m'); assert.equal(s.title, 'Second Reality'); assert.equal(s.channels, 10); assert.equal(s.bpm, 250);
+  const s = probe(fakeS3M(), 's.s3m'); assert.equal(s.title, 'Second Reality'); assert.equal(s.channels, 10); assert.equal(s.bpm, 125);
   const i = probe(fakeIT(), 'i.it'); assert.equal(i.title, 'Deep Space'); assert.equal(i.channels, 12); assert.equal(i.bpm, 128);
 });
 await test('reads ID3 title / artist / BPM', () => {

@@ -6,17 +6,21 @@
 
 import { parseMod, buildTimeline, timelineAt } from './mod/modfile.js';
 import { detect } from './library/formats.js';
+import { ModSongView, TrackerSongView } from './songview.js';
+import { getDsp } from './wasm/dsp.js';
+import { bpmFor, guessRowsPerBeat } from './tempo.js';
 
 const STORE_KEY = 'modpod.tracks.v1';
-const SETTINGS_KEY = 'modpod.settings.v1';
+const SETTINGS_KEY = 'modpod.settings.v2';
 
 export const DEFAULT_SETTINGS = {
   interpolation: 1,     // 0 none / 1 linear / 2 cubic
   stereoSep: 0.5,       // 0 mono … 1 hard Amiga panning
   songLoop: false,      // stop at song end (false) or loop
-  rowsPerBeat: 4,
   quantize: true,
-  keylock: true,        // "master tempo" (MOD decks only for now)
+  keylock: false,       // "master tempo" — off by default, like a CDJ
+  mtMode: 'stretch',    // trackers: 'stretch' (whole mix, samples stay in time) or 'native' (tick rate only)
+  mtQuality: 'tight',   // 'tight' (~70 ms latency) or 'smooth' (~140 ms, cleaner)
   pitchRange: 0.08,     // ±8 %
   faderInvert: false,   // false = CDJ style (up = slower)
   gain: 0.8,
@@ -28,9 +32,11 @@ export class Deck extends EventTarget {
     super();
     this.ctx = null;
     this.node = null;
-    this.kind = null;         // 'mod' | 'audio' | null
-    this.song = null;         // parsed MOD
-    this.timeline = null;
+    this.kind = null;         // 'mod' | 'tracker' | 'audio' | null
+    this.song = null;         // parsed MOD (our JS engine)
+    this.timeline = null;     // MOD timeline (song length, seek info)
+    this.view = null;         // ModSongView / TrackerSongView — what the displays read
+    this.rowsPerBeat = 4;     // per track
     this.audio = null;        // { channels, sampleRate, length, peaks }
     this.name = '';
     this.trackKey = '';
@@ -60,8 +66,11 @@ export class Deck extends EventTarget {
       numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2],
     });
     this.node.connect(this.ctx.destination);
+    this.dspReady = new Promise((resolve) => { this.resolveDsp = resolve; });
     this.node.port.onmessage = (e) => {
-      if (e.data.type === 'state') {
+      if (e.data.type === 'dspReady') this.resolveDsp();
+      else if (e.data.type === 'error') { this.lastError = e.data.message; this.emit('error'); }
+      else if (e.data.type === 'state') {
         const wasPlaying = this.state && this.state.playing;
         this.state = e.data.state;
         this.stateAt = performance.now();
@@ -70,6 +79,9 @@ export class Deck extends EventTarget {
     };
     this.pushSettings();
   }
+
+  /** Row-based track (MOD or tracker module)? */
+  get rowBased() { return this.kind === 'mod' || this.kind === 'tracker'; }
 
   async resume() {
     await this.init();
@@ -87,19 +99,16 @@ export class Deck extends EventTarget {
     const buf = await file.arrayBuffer();
     const fmt = detect(buf, file.name);
     if (!fmt) throw new Error(`"${file.name}" isn't a format ModPod knows.`);
-    if (fmt.kind === 'tracker') {
-      throw new Error(`${fmt.format} playback isn't built yet — it's next on the list (libopenmpt engine). The file is safe in your library.`);
-    }
     this.post({ type: 'pause' });
     this.libraryId = libraryId;
     this.name = file.name;
     this.trackKey = file.name + ':' + file.size;
     this.cueing = false;
-    if (fmt.kind === 'mod') {
-      this.loadMod(buf, file.name);
-    } else {
-      await this.loadAudio(buf);
-    }
+    const oldView = this.view;
+    if (fmt.kind === 'mod') this.loadMod(buf, file.name);
+    else if (fmt.kind === 'tracker') await this.loadTracker(buf, file.name);
+    else await this.loadAudio(buf);
+    if (oldView && oldView !== this.view && oldView.destroy) oldView.destroy();
     this.restoreTrackData();
     this.emit('loaded');
   }
@@ -107,12 +116,31 @@ export class Deck extends EventTarget {
   loadMod(buf, filename) {
     this.song = parseMod(buf, filename);
     this.timeline = buildTimeline(this.song);
+    this.view = new ModSongView(this.song);
     this.kind = 'mod';
     this.audio = null;
     this.mutes = new Array(this.song.channels).fill(false);
+    // Speed/tempo after row 0 (most MODs set their tempo on the first row).
+    const t = this.timeline.entries.get(1) || this.timeline.entries.get(0) || { speed: 6, tempo: 125 };
+    this.rowsPerBeat = guessRowsPerBeat(t.speed, t.tempo);
     this.post({ type: 'loadMod', song: this.song });
     this.pushSettings();
     this.post({ type: 'seek', order: 0, row: 0, speed: 6, tempo: 125 });
+  }
+
+  async loadTracker(buf, filename) {
+    await this.dspReady;
+    const M = await getDsp();
+    const bytes = new Uint8Array(buf);
+    this.view = new TrackerSongView(M, bytes, filename); // UI-thread copy, for the displays
+    this.kind = 'tracker';
+    this.song = null; this.timeline = null; this.audio = null;
+    this.mutes = new Array(this.view.channels).fill(false);
+    // IT files store a "rows per beat" highlight in their header.
+    const hint = this.view.format === 'IT' && bytes.length > 0x1f ? bytes[0x1e] : 0;
+    this.rowsPerBeat = guessRowsPerBeat(this.view.initialSpeed, this.view.initialTempo, hint);
+    this.post({ type: 'loadTracker', bytes: bytes.slice() });
+    this.pushSettings();
   }
 
   async loadAudio(buf) {
@@ -132,7 +160,7 @@ export class Deck extends EventTarget {
       peakBin: 256,
     };
     this.kind = 'audio';
-    this.song = null; this.timeline = null; this.mutes = [];
+    this.song = null; this.timeline = null; this.view = null; this.mutes = [];
     // Copies are transferred (moved) to the audio thread.
     this.post({ type: 'loadAudio', channels, sampleRate: ab.sampleRate }, channels.map((c) => c.buffer));
     this.pushSettings();
@@ -149,7 +177,8 @@ export class Deck extends EventTarget {
   pushSettings() {
     const s = this.settings;
     this.post({ type: 'settings', settings: {
-      interpolation: s.interpolation, stereoSep: s.stereoSep, songLoop: s.songLoop, rowsPerBeat: s.rowsPerBeat,
+      interpolation: s.interpolation, stereoSep: s.stereoSep, songLoop: s.songLoop, rowsPerBeat: this.rowsPerBeat,
+      mtMode: s.mtMode, mtQuality: s.mtQuality,
     } });
     this.post({ type: 'keylock', on: s.keylock });
     this.post({ type: 'gain', value: s.gain });
@@ -214,6 +243,14 @@ export class Deck extends EventTarget {
 
   setKeylock(on) { this.setSetting('keylock', on); }
 
+  /** Rows per beat for the loaded track (saved with its cue points). */
+  setRowsPerBeat(n) {
+    this.rowsPerBeat = n;
+    this.pushSettings();
+    this.saveTrackData();
+    this.emit('bpm');
+  }
+
   toggleMute(ch) {
     this.mutes[ch] = !this.mutes[ch];
     this.post({ type: 'mute', channel: ch, on: this.mutes[ch] });
@@ -238,14 +275,14 @@ export class Deck extends EventTarget {
   }
 
   // ------------------------------------------------------------------ positions
-  // MOD positions are {order,row}; audio positions are {frame}.
+  // MOD/tracker positions are {order,row}; audio positions are {frame}.
 
-  startPos() { return this.kind === 'mod' ? { order: 0, row: 0 } : { frame: 0 }; }
+  startPos() { return this.rowBased ? { order: 0, row: 0 } : { frame: 0 }; }
 
   currentPos() {
     const s = this.state;
     if (!s) return this.startPos();
-    if (this.kind === 'mod') return { order: s.order, row: s.row };
+    if (this.rowBased) return { order: s.order, row: s.row };
     return { frame: Math.floor(this.extrapolatedFrame()) };
   }
 
@@ -259,14 +296,14 @@ export class Deck extends EventTarget {
 
   samePos(a, b) {
     if (!a || !b) return false;
-    if (this.kind === 'mod') return a.order === b.order && a.row === b.row;
+    if (this.rowBased) return a.order === b.order && a.row === b.row;
     return Math.abs(a.frame - b.frame) < 64;
   }
 
   quantizePos(p) {
     if (!this.settings.quantize) return p;
-    if (this.kind === 'mod') {
-      const rpb = this.settings.rowsPerBeat;
+    if (this.rowBased) {
+      const rpb = this.rowsPerBeat;
       return { order: p.order, row: p.row - (p.row % rpb) };
     }
     if (this.bpmAudio > 0) {
@@ -282,7 +319,15 @@ export class Deck extends EventTarget {
     if (this.kind === 'mod') {
       const t = timelineAt(this.timeline, p.order, p.row);
       this.post({ type: 'seek', order: p.order, row: p.row, speed: t.speed, tempo: t.tempo, quantize });
-      if (this.state) { this.state.order = p.order; this.state.row = p.row; this.state.tick = 0; }
+      if (this.state && !quantize) { this.state.order = p.order; this.state.row = p.row; this.state.tick = 0; }
+    } else if (this.kind === 'tracker') {
+      let seconds = this.view.timeAt(p.order, p.row);
+      if (seconds < 0) seconds = Math.max(0, this.view.orderTime[p.order] ?? 0); // a part the song never plays
+      this.post({ type: 'seek', order: p.order, row: p.row, seconds, quantize });
+      if (this.state && !quantize) {
+        Object.assign(this.state, { order: p.order, row: p.row, tick: 0, seconds });
+        this.stateAt = performance.now();
+      }
     } else {
       this.post({ type: 'seek', frame: p.frame, quantize });
       if (this.state && !quantize) { this.state.frame = p.frame; this.stateAt = performance.now(); }
@@ -292,13 +337,10 @@ export class Deck extends EventTarget {
   /** Jog while paused: move by `amount` rows (MOD) or seconds (audio). */
   search(amount) {
     if (!this.loaded) return;
-    if (this.kind === 'mod') {
-      let { order, row } = this.currentPos();
-      row += amount;
-      while (row < 0 && order > 0) { order--; row += 64; }
-      while (row > 63 && order < this.song.songLength - 1) { order++; row -= 64; }
-      row = Math.max(0, Math.min(63, row));
-      this.seekTo({ order, row }, false);
+    if (this.rowBased) {
+      const { order, row } = this.currentPos();
+      const p = this.view.step(order, row, amount);
+      if (p) this.seekTo(p, false);
     } else {
       const f = this.extrapolatedFrame() + amount * this.audio.sampleRate;
       this.seekTo({ frame: Math.max(0, Math.min(this.audio.length - 1, f)) }, false);
@@ -315,20 +357,27 @@ export class Deck extends EventTarget {
       const t = timelineAt(this.timeline, s.order, s.row);
       return t.time + (s.tick * 2.5) / s.tempo;
     }
+    if (this.kind === 'tracker') {
+      const s = this.state;
+      if (!s.playing || s.seconds == null) return s.seconds || 0;
+      const dt = Math.min(0.1, (performance.now() - this.stateAt) / 1000);
+      return s.seconds + dt * this.rate * this.bend;
+    }
     return this.extrapolatedFrame() / this.audio.sampleRate;
   }
 
   duration() {
     if (this.kind === 'mod') return this.timeline.duration;
+    if (this.kind === 'tracker') return this.view.duration;
     if (this.kind === 'audio') return this.audio.duration;
     return 0;
   }
 
   /** Original BPM of the track (before the tempo fader), or 0 if unknown. */
   baseBpm() {
-    if (this.kind === 'mod') {
+    if (this.rowBased) {
       const s = this.state || { tempo: 125, speed: 6 };
-      return (s.tempo * 24) / (s.speed * this.settings.rowsPerBeat);
+      return bpmFor(s.speed, s.tempo, this.rowsPerBeat);
     }
     return this.bpmAudio;
   }
@@ -339,7 +388,7 @@ export class Deck extends EventTarget {
     const all = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
     all[this.trackKey] = {
       cue: this.cue, hotcues: this.hotcues,
-      bpm: this.bpmAudio, gridOffset: this.gridOffset, saved: Date.now(),
+      bpm: this.bpmAudio, gridOffset: this.gridOffset, rpb: this.rowsPerBeat, saved: Date.now(),
     };
     localStorage.setItem(STORE_KEY, JSON.stringify(all));
   }
@@ -351,6 +400,7 @@ export class Deck extends EventTarget {
     this.hotcues = d.hotcues || [null, null, null, null];
     this.bpmAudio = this.kind === 'audio' ? d.bpm || 0 : 0;
     this.gridOffset = d.gridOffset || 0;
+    if (this.rowBased && d.rpb) { this.rowsPerBeat = d.rpb; this.pushSettings(); }
     if (this.kind === 'audio') this.post({ type: 'grid', bpm: this.bpmAudio, offset: this.gridOffset });
     this.seekTo(this.cue, false);
   }

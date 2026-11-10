@@ -141,6 +141,11 @@ export class ModPlayer {
     }
   }
 
+  /** Jump to a loop start (keeps playing notes; restores the loop's speed/tempo). */
+  seekRow(L) { this.seek(L.order, L.row, L.speed, L.tempo, true); }
+
+  setMute(ch, on) { if (this.channels[ch]) this.channels[ch].muted = on; }
+
   /** Queue a jump that happens on the next beat boundary (quantize). */
   seekQuantized(order, row, speed, tempo) {
     this.pendingSeek = { order, row, speed, tempo };

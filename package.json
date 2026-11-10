@@ -5,7 +5,7 @@
   "type": "module",
   "description": "A CDJ-style deck for tablets that plays MOD files and regular audio tracks",
   "scripts": {
-    "test": "node tests/engine.test.js && node tests/library.test.js",
+    "test": "node tests/engine.test.js && node tests/library.test.js && node tests/tracker.test.js",
     "serve": "python3 -m http.server 8080"
   }
 }

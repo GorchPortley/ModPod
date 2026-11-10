@@ -2,9 +2,10 @@
 // Pure functions over ArrayBuffers (no DOM), so they're easy to test in Node.
 
 import { looksLikeMod, parseMod, buildTimeline } from '../mod/modfile.js';
+import { bpmFor, guessRowsPerBeat } from '../tempo.js';
 
 const AUDIO_EXT = /\.(mp3|wav|wave|flac|ogg|oga|opus|m4a|mp4|aac|webm|aif|aiff|caf)$/i;
-// Tracker formats other than MOD. Played by the libopenmpt engine (coming soon).
+// Tracker formats other than MOD. Played by the libopenmpt engine (WebAssembly).
 const TRACKER_EXT = /\.(xm|s3m|it|mptm|mtm|669|med|okt|far|ult|stm|amf|dbm|dmf|dsm|ams|mdl|psm|ptm|imf|j2b|gdm|umx|mo3)$/i;
 
 function ascii(b, off, len) {
@@ -46,6 +47,11 @@ export function detect(buf, name = '') {
   return null;
 }
 
+/** BPM with the same rows-per-beat guess the deck uses, rounded to 0.1. */
+function bpm(speed, tempo, hint = 0) {
+  return Math.round(bpmFor(speed, tempo, guessRowsPerBeat(speed, tempo, hint)) * 10) / 10;
+}
+
 /** Library metadata for a file. Cheap: never decodes audio. */
 export function probe(buf, name) {
   const d = detect(buf, name);
@@ -76,30 +82,25 @@ export function probe(buf, name) {
       meta.title = song.title;
       meta.channels = song.channels;
       meta.duration = tl.duration;
-      const first = tl.entries.get(0);
-      meta.bpm = first ? Math.round((first.tempo * 24 / (first.speed * 4)) * 10) / 10 : 125;
       // Use the speed/tempo after row 0's effects (most MODs set tempo on row 0).
-      const r1 = tl.entries.get(1);
-      if (r1) meta.bpm = Math.round((r1.tempo * 24 / (r1.speed * 4)) * 10) / 10;
+      const t = tl.entries.get(1) || tl.entries.get(0) || { speed: 6, tempo: 125 };
+      meta.bpm = bpm(t.speed, t.tempo);
     } else if (d.format === 'XM') {
       meta.title = ascii(b, 17, 20);
       meta.channels = u16(b, 68);
-      const speed = u16(b, 76) || 6, tempo = u16(b, 78) || 125;
-      meta.bpm = Math.round((tempo * 24 / (speed * 4)) * 10) / 10;
+      meta.bpm = bpm(u16(b, 76) || 6, u16(b, 78) || 125);
     } else if (d.format === 'S3M') {
       meta.title = ascii(b, 0, 28);
       let ch = 0;
       for (let i = 0; i < 32; i++) if (b[64 + i] < 16) ch++;
       meta.channels = ch;
-      const speed = b[49] || 6, tempo = b[50] || 125;
-      meta.bpm = Math.round((tempo * 24 / (speed * 4)) * 10) / 10;
+      meta.bpm = bpm(b[49] || 6, b[50] || 125);
     } else if (d.format === 'IT') {
       meta.title = ascii(b, 4, 26);
       let ch = 0;
       for (let i = 0; i < 64; i++) if (b[0x40 + i] < 128) ch = i + 1; // highest enabled channel
       meta.channels = ch;
-      const speed = b[0x32] || 6, tempo = b[0x33] || 125;
-      meta.bpm = Math.round((tempo * 24 / (speed * 4)) * 10) / 10;
+      meta.bpm = bpm(b[0x32] || 6, b[0x33] || 125, b[0x1e]); // 0x1E = rows-per-beat highlight
     } else if (d.format === 'MP3') {
       Object.assign(meta, readId3(b));
     }

@@ -23,7 +23,7 @@ html, body {
 #app {
   height: 100dvh; height: 100vh;
   display: grid;
-  grid-template-columns: 1fr 104px;
+  grid-template-columns: minmax(0, 1fr) 104px; /* minmax: a wide channel strip mustn't widen the page */
   grid-template-rows: auto 52px 1fr minmax(220px, 34vh);
   grid-template-areas:
     "top top"
@@ -83,7 +83,7 @@ html, body {
 .nudge .btn { flex: 1; font-size: 18px; }
 
 /* ---------- controls ---------- */
-#controls { grid-area: controls; display: flex; gap: 10px; min-height: 0; }
+#controls { grid-area: controls; display: flex; gap: 10px; min-height: 0; min-width: 0; }
 #transport { display: flex; flex-direction: column; justify-content: space-around; gap: 10px; }
 .btn.round { width: clamp(76px, 11vh, 110px); height: clamp(76px, 11vh, 110px); border-radius: 50%; font-size: 16px; border-width: 3px; }
 .btn.cue { border-color: #7a5a1a; color: #ffb347; }
@@ -94,7 +94,7 @@ html, body {
 #jog-wrap { aspect-ratio: 1; height: 100%; max-width: 40%; }
 #jog { width: 100%; height: 100%; touch-action: none; }
 #pads { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.pad-row { flex: 1; display: flex; gap: 6px; min-height: 0; }
+.pad-row { flex: 1; display: flex; gap: 6px; min-height: 0; min-width: 0; }
 .btn.pad { flex: 1; padding: 4px; font-size: 13px; min-width: 0; }
 .btn.hc.set { color: #000; }
 .btn.hc.set[data-i="0"] { background: #ff3b6b; }
@@ -103,7 +103,8 @@ html, body {
 .btn.hc.set[data-i="3"] { background: #ffd23b; }
 .btn.loop-on { background: #123a22; border-color: var(--green); color: var(--green); }
 .btn.armed { border-color: var(--green); color: var(--green); }
-#channels .btn { position: relative; overflow: hidden; }
+#channels { overflow-x: auto; touch-action: pan-x; }
+#channels .btn { position: relative; overflow: hidden; min-width: 44px; flex: 1 0 44px; }
 #channels .btn .vu { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--green); width: 0; }
 #channels .btn.muted { background: #2a1015; color: #7a4450; border-color: #5a2030; }
 

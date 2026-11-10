@@ -1,42 +1,60 @@
 # ModPod
 
-A CDJ-style deck for tablets that plays **tracker MOD files** *and* regular audio tracks.
+A CDJ-style deck for tablets that plays **tracker modules** (MOD, XM, S3M, IT and ~20 more) *and* regular audio tracks.
 One tablet = one deck. Put two (or more) tablets into a DJ mixer and mix.
 
 It's a web app (PWA), so it runs on iPad and Android tablets alike. Install it to the home
 screen and it works offline.
 
-## What it does today (v0.1)
+## What it does today (v0.3)
 
-| | MOD deck | Audio deck (mp3/wav/flac/ogg/m4a…) |
-|---|---|---|
-| Play / pause, CDJ-style **CUE** (pause → set & preview, playing → back to cue) | ✅ | ✅ |
-| 4 **hot cues** (hold to clear), saved per track | ✅ | ✅ |
-| **Tempo fader** ±6 / 8 / 16 / 50 %, nudge buttons, jog-wheel pitch bend | ✅ | ✅ |
-| **Master tempo / key lock** | ✅ (free — see below) | ❌ later |
-| Loop in/out, reloop, auto-loop ¼–32 beats, halve/double | ✅ | ✅ (needs BPM) |
-| **Quantize** (jumps & loops snap to beats) | ✅ | ✅ (needs BPM) |
-| BPM | read from the MOD | tap tempo (hold TAP to type it) |
-| **Channel mutes / solo** (stems!) | ✅ | — |
-| Display | scrolling pattern view | scrolling waveform + beat grid |
-| Overview strip with needle search | orders (coloured by pattern) | waveform |
+| | MOD | XM / S3M / IT / … | Audio (mp3/wav/flac/ogg/m4a…) |
+|---|---|---|---|
+| Engine | our own JS ProTracker engine | libopenmpt (C++ → WebAssembly) | browser decoder |
+| Play / pause, CDJ-style **CUE**, 4 **hot cues** (saved per track) | ✅ | ✅ | ✅ |
+| **Tempo fader** ±6 / 8 / 16 / 50 %, nudge, jog-wheel bend | ✅ | ✅ | ✅ |
+| **Master tempo / key lock** (MT) | ✅ | ✅ | ✅ |
+| Loop in/out, reloop, auto-loop ¼–32 beats, halve/double, **quantize** | ✅ | ✅ | ✅ (needs BPM) |
+| BPM | read from the file | read from the file | tap tempo / ID3 |
+| **Channel mutes / solo** (stems!) | ✅ | ✅ (up to 64 ch) | — |
+| Display | pattern view | pattern view (+ volume column) | waveform + beat grid |
 
-### Why MODs are great for DJing
+### Master tempo: why samples now stay in time
 
-A MOD's **tempo** is just how fast the player steps through rows. Its **pitch** is how fast
-each sample is played back. The two are independent in the engine (`tempoMul` and `pitchMul`
-in `js/mod/modplayer.js`). So key lock on a MOD costs nothing and sounds perfect,
-with no time-stretch artefacts at all.
+A tracker's **tempo** is how fast it steps through rows. Its **pitch** is how fast each sample plays.
+If you only speed up the rows (that was v0.1's key lock), short drum hits are fine. But a long
+sample that's meant to last exactly one bar, like a breakbeat, a vocal or a pad, keeps its old
+length and drifts against the pattern.
 
-Each MOD channel is also effectively a stem: mute the drums, solo the bassline, and so on.
+So now the deck works like a real CDJ's master tempo:
+
+1. The track always plays **vinyl-style**: rows *and* samples speed up together, so everything
+   in the module stays in time with itself.
+2. With **MT** on, a high-quality pitch shifter (Signalsmith Stretch) moves the key back to
+   where it was.
+
+Playback still starts instantly on PLAY, CUE or a hot cue: the shifter is pre-filled, so you never
+hear its latency at the start. The same shifter gives **audio tracks key lock** too.
+
+In ⚙ Settings you can choose:
+- **MT on tracker files**: *Whole mix* (default, samples stay in time) or *Tracker-native*
+  (the old way: zero artefacts, fine for chip-tunes made of short samples).
+- **MT quality**: *Tight* (~70 ms latency) or *Smooth* (~140 ms, cleaner on sustained sounds).
+  The latency only shows up as a slight delay on things like mutes and nudges.
+
+### Rows per beat
+Trackers don't store beats. Most tunes use 4 rows per beat, but fast XM/IT tunes often run at
+speed 3 with 8 rows per beat. ModPod guesses (IT files even store it), and you can fix a BPM that
+reads double or half in ⚙ Settings → *Rows per beat*. That's saved per track.
 
 ### DJ-friendly playback details
-- Volume ramping + short fade-outs on retriggered notes, so it doesn't click on a big system.
+- Volume ramping + short fade-outs, so nothing clicks on a big system.
 - Adjustable stereo separation (Amiga hard-panning sounds odd on a club rig; default is 50 %).
-- Interpolation: Off (crunchy Amiga), Linear, Cubic.
-- `Fxx` tempo changes, `Bxx` jumps, pattern loops (`E6x`) and pattern delays are followed properly.
-  The song length is computed up front, so **remaining time** is accurate.
+- Interpolation: Off (crunchy Amiga), Linear, Smoothest.
+- Song length is computed up front, following jumps and pattern loops, so **remaining time** is accurate.
 - At song end: stop (default) or loop forever.
+- Songs with many channels: the pattern view shrinks to fit. If they still don't fit,
+  **swipe sideways** on the pattern view to scroll through channels.
 
 ## Library
 
@@ -52,8 +70,6 @@ there next time and work offline.
 - Titles, BPM and length come from the files themselves (MOD/XM/S3M/IT headers, mp3 ID3 tags).
   Audio length is filled in once you've loaded the track, and tapped BPMs are saved.
 - Each tablet has its own library (browser storage is per device).
-
-XM / S3M / IT files can already be imported and browsed. Playing them needs the libopenmpt engine (next step).
 
 ## Using it
 
@@ -94,21 +110,35 @@ js/deck-processor.js        the AudioWorklet (real-time audio thread), owns one 
 js/mod/modfile.js           MOD parser + timeline scan (song length, seeking info)
 js/mod/modplayer.js         the MOD engine (ProTracker effects, mixing, DJ loops)
 js/audio/bufferplayer.js    audio-track player (variable speed, loops, beat grid)
+js/tracker/trackerplayer.js XM/S3M/IT player: libopenmpt + row-accurate DJ loops/jumps
+js/songview.js              one interface over song structure for the displays
+js/tempo.js                 speed/tempo → BPM, rows-per-beat guess
+js/wasm/                    the compiled C++ (modpod-dsp.js) + loader
+native/modpod_dsp.cpp       the C++ glue: libopenmpt + Signalsmith Stretch, as plain C functions
+native/build.sh             rebuilds js/wasm/modpod-dsp.js (needs the Emscripten SDK)
 js/library/                 library: IndexedDB storage, format detection + metadata, zip import, browser UI
 sw.js, manifest.webmanifest offline / installable app
 tests/                      headless engine tests + the demo-MOD generator
 ```
 
-The engine is written as plain classes over typed arrays. That maps closely onto C++,
-if you ever want to port it or swap in a C++/WebAssembly core.
+The JS MOD engine is plain classes over typed arrays, which map closely onto C++.
+The tracker engine and the pitch shifter already *are* C++. `native/modpod_dsp.cpp` is a short,
+commented file that's a good place to start tinkering. To rebuild after changing it:
 
-Run the tests: `npm test` (add `-- --wav` to also write `tests/out/demo.wav` to listen to).
+```sh
+source /path/to/emsdk/emsdk_env.sh   # https://emscripten.org/docs/getting_started/downloads.html
+native/build.sh                       # downloads libopenmpt + Signalsmith, writes js/wasm/modpod-dsp.js
+```
+
+Third-party licences: see [THIRD_PARTY.md](THIRD_PARTY.md).
+
+Run the tests: `npm test`. To also write `tests/out/demo.wav` to listen to: `node tests/engine.test.js --wav`.
 
 ## Roadmap / ideas for next steps
 
 - [x] **Library / crates** stored on the tablet (IndexedDB), with zip import.
-- [ ] **More formats**: XM / S3M / IT. Either extend the engine, or compile *libopenmpt* (C++) to WebAssembly.
-- [ ] **Key lock for audio tracks** (time-stretching, e.g. WSOLA or a phase vocoder).
+- [x] **More formats**: XM / S3M / IT and more, via libopenmpt compiled to WebAssembly.
+- [x] **Master tempo for everything**, with samples kept in time (Signalsmith Stretch).
 - [ ] **Auto BPM detection** for audio tracks, plus beat-grid nudge.
 - [ ] Per-channel oscilloscopes / VU in the MOD view; sample names; row-highlight per beat.
 - [ ] Vinyl-mode scratching on the jog wheel; brake / spin-back effects.

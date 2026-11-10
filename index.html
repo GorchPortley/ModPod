@@ -93,22 +93,34 @@
   <dialog id="settings">
     <form method="dialog">
       <h2>Settings</h2>
-      <label>Interpolation (MOD)
+      <label>Interpolation (trackers)
         <select id="set-interp">
           <option value="0">Off — crunchy Amiga</option>
           <option value="1">Linear</option>
           <option value="2">Cubic — smoothest</option>
         </select>
       </label>
-      <label>Stereo separation (MOD) <span id="set-sep-val"></span>
+      <label>Stereo separation (trackers) <span id="set-sep-val"></span>
         <input type="range" id="set-sep" min="0" max="100" step="5">
       </label>
-      <label>Rows per beat (MOD)
+      <label>Rows per beat (this track — fix a BPM that reads double/half)
         <select id="set-rpb">
-          <option>2</option><option>3</option><option>4</option><option>6</option><option>8</option>
+          <option>2</option><option>3</option><option>4</option><option>6</option><option>8</option><option>12</option><option>16</option>
         </select>
       </label>
-      <label>At song end (MOD)
+      <label>Master tempo (MT) on tracker files
+        <select id="set-mtmode">
+          <option value="stretch">Whole mix — samples stay in time (recommended)</option>
+          <option value="native">Tracker-native — no artefacts, long samples drift</option>
+        </select>
+      </label>
+      <label>Master tempo quality
+        <select id="set-mtquality">
+          <option value="tight">Tight — ~70 ms latency</option>
+          <option value="smooth">Smooth — ~140 ms latency, cleaner sound</option>
+        </select>
+      </label>
+      <label>At song end (trackers)
         <select id="set-songloop">
           <option value="0">Stop</option>
           <option value="1">Loop forever</option>
