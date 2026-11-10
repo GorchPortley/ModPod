@@ -399,7 +399,18 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 document.addEventListener('pointerdown', () => { deck.resume(); requestWakeLock(); }, { once: true });
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+    .then((reg) => reg.update())
+    .catch(() => {});
+  // A new version took over: offer a reload (never automatic — you might be mid-set).
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hadController) $('update-banner').hidden = false;
+  });
+  $('update-banner').addEventListener('click', () => {
+    if (deck.playing && !confirm('The deck is playing. Reload now to update?')) return;
+    location.reload();
+  });
 }
 
 // ---------------------------------------------------------------- per-frame UI update

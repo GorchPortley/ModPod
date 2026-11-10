@@ -176,3 +176,7 @@ dialog label.check { display: flex; gap: 8px; align-items: center; }
 .sheet-buttons { display: flex; gap: 8px; justify-content: space-between; margin-top: 8px; }
 .btn.danger { color: var(--red); border-color: #5a2030; }
 @media (max-width: 760px) { #lib-crates { width: 140px; } .trk .dur { display: none; } }
+
+#update-banner { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 20;
+  background: #123a22; border-color: var(--green); color: var(--green); }
+#update-banner[hidden] { display: none; }

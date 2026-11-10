@@ -1,6 +1,6 @@
 // sw.js — offline cache so the deck works in a club with no Wi-Fi.
 // Bump VERSION whenever you change any app file so tablets pick up the update.
-const VERSION = 'modpod-v3';
+const VERSION = 'modpod-v4';
 const FILES = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest',
   'js/app.js', 'js/deck.js', 'js/views.js', 'js/deck-processor.js',
@@ -24,10 +24,12 @@ self.addEventListener('activate', (e) => {
 });
 
 // Network first (so updates show up when online), cache as fallback.
+// cache: 'no-cache' makes the browser check with the server every time instead of
+// reusing its own HTTP cache (GitHub Pages lets files be reused for 10 minutes).
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then((res) => {
         const copy = res.clone();
         caches.open(VERSION).then((c) => c.put(e.request, copy));
